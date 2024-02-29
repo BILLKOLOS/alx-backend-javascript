@@ -1,56 +1,61 @@
-/**
- * HTTP sever that handles / and /students
- * routes
- */
 const http = require('http');
 const fs = require('fs');
 
-const db = process.argv[2] === undefined ? '' : process.argv[2];
-const host = '127.0.0.1';
-const port = 1245;
-const app = http.createServer((req, resp) => {
-  // eslint-disable-next-line no-param-reassign
-  resp.statusCode = 200;
-  resp.setHeader('Content-Type', 'text/plain');
-  if (req.url === '/') {
-    resp.end('Hello Holberton School!');
-  }
-  if (req.url === '/students') {
-    const body = ['This is the list of our students'];
-    fs.readFile(db, 'utf-8', (error, data) => {
-      if (error) {
-        body.push('Cannot load the database');
-        resp.end(body.join('\n'));
-      } else {
-        const courses = new Map();
-        let students = data.split('\n');
-        students = students.slice(1, students.length - 1);
+const database = process.argv.length > 2 ? process.argv[2] : '';
 
-        // Parse CSV data creating a map of courseData objects.
-        students.forEach((student) => {
-          const studentData = student.split(',');
-          const firstName = studentData[0];
-          const field = studentData[3];
-          if (courses.has(field)) {
-            courses.get(field).push(firstName);
-          } else {
-            courses.set(field, [firstName]);
+const countStudents = (path) => new Promise((resolve, reject) => {
+  fs.readFile(path, 'utf-8', (err, data) => {
+    if (err) {
+      reject(new Error('Cannot load the database'));
+    }
+    if (data) {
+      const fileLines = data.toString('utf-8').split('\n');
+      const keys = fileLines[0].split(',');
+      const students = [];
+      const studentsFields = {};
+      for (const student of fileLines.slice(1)) {
+        if (student.length) {
+          const listStudent = student.split(',');
+          students.push(Object.fromEntries(
+            keys.map((key, index) => [key, listStudent[index]]),
+          ));
+          const field = listStudent[listStudent.length - 1];
+          if (!Object.keys(studentsFields).includes(field)) {
+            studentsFields[field] = [];
           }
-        });
-
-        // Organize data in an array
-        body.push(`Number of students: ${students.length}`);
-        courses.forEach((courseStudents, course) => {
-          body.push(`Number of students in ${course}: ${courseStudents.length}. List: ${courseStudents.join(', ')}`);
-        });
+          studentsFields[field].push(listStudent[0]);
+        }
       }
-      resp.end(body.join('\n'));
-    });
+      const respons = [];
+      respons.push(`Number of students: ${students.length}`);
+      for (const [field, group] of Object.entries(studentsFields)) {
+        respons.push(`Number of students in ${field}: ${group.length}. List: ${group.join(', ')}`);
+      }
+      resolve(respons);
+    }
+  });
+});
+
+const HOST = '127.0.0.1';
+const PORT = 1245;
+const app = http.createServer((req, res) => {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'text/plain');
+  if (req.url === '/') {
+    res.end('Hello Holberton School!');
+  } else if (req.url === '/students') {
+    countStudents(database)
+      .then((report) => {
+        res.end(`This is the list of our students\n${report.join('\n')}`);
+      }).catch((err) => {
+        const error = (err instanceof Error) ? err.message : err.toString();
+        res.end(`This is the list of our students\n${error}`);
+      });
   }
 });
 
-app.listen(port, host, () => {
-  console.log(`Server is live, running at http://${host}:${port}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Server running at: http://${HOST}:${PORT}/`);
 });
 
 module.exports = app;
